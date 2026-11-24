@@ -563,6 +563,49 @@ class MuseumAudioEngine {
     osc.stop(now + 0.3);
   }
 
+  /**
+   * Subtle, pleasant two-tone notification chime when guide activates TOUR
+   */
+  public playTourNotifyChime() {
+    const ctx = this.ensureContext();
+    if (!ctx || this.muted) return;
+
+    const now = ctx.currentTime;
+    const notes = [
+      { freq: 659.25, delay: 0, dur: 0.42 },
+      { freq: 880.0, delay: 0.12, dur: 0.56 },
+    ];
+
+    notes.forEach(({ freq, delay, dur }) => {
+      const t = now + delay;
+      const osc = ctx.createOscillator();
+      const overtone = ctx.createOscillator();
+      const overtoneGain = ctx.createGain();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      overtone.type = 'triangle';
+      overtone.frequency.setValueAtTime(freq * 2, t);
+      overtoneGain.gain.setValueAtTime(0.16, t);
+
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(0.11, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+
+      osc.connect(gain);
+      overtone.connect(overtoneGain);
+      overtoneGain.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(t);
+      overtone.start(t);
+      osc.stop(t + dur + 0.04);
+      overtone.stop(t + dur + 0.04);
+    });
+  }
+
   public dispose() {
     if (this.birdTimer) clearTimeout(this.birdTimer);
     if (this.crackleTimer) clearTimeout(this.crackleTimer);

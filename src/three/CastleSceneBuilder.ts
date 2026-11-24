@@ -16,6 +16,7 @@ export interface CastleController {
   isPortcullisSupported: () => boolean;
   triggerGuardShot: () => boolean;
   triggerDragonEasterEgg: () => boolean;
+  setTourSphereState: (visible: boolean, x: number, y: number, z: number, diameter: number) => void;
   update: (delta: number, elapsed: number) => void;
   dispose: () => void;
 }
@@ -151,6 +152,7 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
   );
   shadowPlane.rotation.x = -Math.PI / 2;
   shadowPlane.position.y = -1.32;
+  shadowPlane.userData.ignoreTourRaycast = true;
   baseGroup.add(shadowPlane);
 
   // Stone base plinth
@@ -1272,6 +1274,128 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
   const _fireTargetLocal = new THREE.Vector3();
   const _fireDirLocal = new THREE.Vector3();
 
+  // Live TOUR Guide 3D Beacon (Yellow Zone + Always-Visible Red Core + Overhead Arrow + Vertical Beam)
+  const tourBeaconRoot = new THREE.Group();
+  tourBeaconRoot.visible = false;
+  root.add(tourBeaconRoot);
+
+  const tourIndicatorGroup = new THREE.Group();
+  tourBeaconRoot.add(tourIndicatorGroup);
+
+  const tourSphereMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xeab308,
+    emissiveIntensity: 0.45,
+    roughness: 0.25,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+  });
+  const tourOuterSphere = new THREE.Mesh(
+    trackGeo(new THREE.SphereGeometry(0.5, 28, 20)),
+    tourSphereMat
+  );
+  tourOuterSphere.renderOrder = 10;
+  tourOuterSphere.userData.ignoreTourRaycast = true;
+  tourIndicatorGroup.add(tourOuterSphere);
+
+  const tourCoreLedMat = new THREE.MeshStandardMaterial({
+    color: 0xff0000,
+    emissive: 0xff1e1e,
+    emissiveIntensity: 2.0,
+    roughness: 0.12,
+    metalness: 0.0,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const tourCoreLed = new THREE.Mesh(
+    trackGeo(new THREE.SphereGeometry(0.11, 18, 14)),
+    tourCoreLedMat
+  );
+  tourCoreLed.renderOrder = 11;
+  tourCoreLed.userData.ignoreTourRaycast = true;
+  tourIndicatorGroup.add(tourCoreLed);
+
+  // Overhead Rotating & Bobbing Downward 3D Arrow at Y = 4.2
+  const tourArrowGroup = new THREE.Group();
+  tourBeaconRoot.add(tourArrowGroup);
+
+  const tourArrowShaftMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xfacc15,
+    emissiveIntensity: 0.75,
+    roughness: 0.22,
+    metalness: 0.1,
+  });
+  const tourArrowTipMat = new THREE.MeshStandardMaterial({
+    color: 0xff0000,
+    emissive: 0xff1e1e,
+    emissiveIntensity: 1.7,
+    roughness: 0.18,
+    metalness: 0.05,
+  });
+
+  // Faceted downward cone (tip sits at local y = 0, base at y = 0.64)
+  const tourArrowTip = new THREE.Mesh(
+    trackGeo(new THREE.ConeGeometry(0.32, 0.64, 6)),
+    tourArrowTipMat
+  );
+  tourArrowTip.rotation.x = Math.PI;
+  tourArrowTip.position.y = 0.32;
+  tourArrowTip.renderOrder = 10;
+  tourArrowTip.userData.ignoreTourRaycast = true;
+  tourArrowGroup.add(tourArrowTip);
+
+  // Bright yellow vertical shaft above cone
+  const tourArrowShaft = new THREE.Mesh(
+    trackGeo(new THREE.CylinderGeometry(0.11, 0.11, 0.85, 6)),
+    tourArrowShaftMat
+  );
+  tourArrowShaft.position.y = 1.04;
+  tourArrowShaft.renderOrder = 10;
+  tourArrowShaft.userData.ignoreTourRaycast = true;
+  tourArrowGroup.add(tourArrowShaft);
+
+  // Vertical Red-Yellow Semi-Transparent Laser Beacon Beam
+  const beamGeo = trackGeo(new THREE.CylinderGeometry(0.036, 0.036, 1.0, 10, 1));
+  const beamPosAttr = beamGeo.getAttribute('position') as THREE.BufferAttribute;
+  const beamColors = new Float32Array(beamPosAttr.count * 3);
+  for (let i = 0; i < beamPosAttr.count; i++) {
+    const vy = beamPosAttr.getY(i);
+    if (vy > 0) {
+      // Top end near yellow arrow
+      beamColors[i * 3] = 1.0;
+      beamColors[i * 3 + 1] = 0.85;
+      beamColors[i * 3 + 2] = 0.12;
+    } else {
+      // Bottom end at red core
+      beamColors[i * 3] = 1.0;
+      beamColors[i * 3 + 1] = 0.12;
+      beamColors[i * 3 + 2] = 0.08;
+    }
+  }
+  beamGeo.setAttribute('color', new THREE.BufferAttribute(beamColors, 3));
+
+  const tourBeamMat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.56,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const tourBeamMesh = new THREE.Mesh(beamGeo, tourBeamMat);
+  tourBeamMesh.renderOrder = 8;
+  tourBeamMesh.userData.ignoreTourRaycast = true;
+  tourBeaconRoot.add(tourBeamMesh);
+
+  let tourSphereTargetVisible = false;
+  let tourSphereTargetX = 0;
+  let tourSphereTargetY = 1.2;
+  let tourSphereTargetZ = 0;
+  let tourSphereTargetSize = 0.75;
+  let tourSphereCurSize = 0.75;
+
   // Smooth growth targets per architectural group (0..1)
   const groupFactors = {
     era1: 0,
@@ -1354,6 +1478,24 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
       }
       dragonWakeTimer = 3.0;
       return true;
+    },
+    setTourSphereState: (visible: boolean, x: number, y: number, z: number, diameter: number) => {
+      const wasHidden = !tourSphereTargetVisible;
+      tourSphereTargetVisible = visible;
+      tourSphereTargetX = x;
+      tourSphereTargetY = y;
+      tourSphereTargetZ = z;
+      tourSphereTargetSize = THREE.MathUtils.clamp(diameter, 0.25, 2.2);
+      if (visible && wasHidden) {
+        tourIndicatorGroup.position.set(x, y, z);
+        tourSphereCurSize = tourSphereTargetSize;
+        tourOuterSphere.scale.setScalar(tourSphereCurSize);
+        const initArrowY = Math.max(4.2, y + 0.85);
+        tourArrowGroup.position.set(x, initArrowY, z);
+        tourBeamMesh.position.set(x, (y + initArrowY) * 0.5, z);
+        tourBeamMesh.scale.set(1, Math.max(0.05, initArrowY - y), 1);
+      }
+      tourBeaconRoot.visible = visible;
     },
     update: (delta: number, elapsed: number) => {
       const dt = Math.min(delta, 0.1);
@@ -1681,6 +1823,34 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
         dragonFireLight.intensity = 0;
       }
 
+      // Live TOUR Guide Two-Layer Sphere + Overhead Beacon Arrow + Vertical Laser Beam
+      tourBeaconRoot.visible = tourSphereTargetVisible;
+      if (tourSphereTargetVisible) {
+        const curX = THREE.MathUtils.damp(tourIndicatorGroup.position.x, tourSphereTargetX, 18, dt);
+        const curY = THREE.MathUtils.damp(tourIndicatorGroup.position.y, tourSphereTargetY, 18, dt);
+        const curZ = THREE.MathUtils.damp(tourIndicatorGroup.position.z, tourSphereTargetZ, 18, dt);
+        tourIndicatorGroup.position.set(curX, curY, curZ);
+
+        tourSphereCurSize = THREE.MathUtils.damp(tourSphereCurSize, tourSphereTargetSize, 14, dt);
+        tourOuterSphere.scale.setScalar(tourSphereCurSize);
+
+        const redPulse = 2.0 + Math.sin(elapsed * 6.0) * 0.48;
+        tourCoreLedMat.emissiveIntensity = redPulse;
+
+        // Overhead arrow at Y = 4.2 above ground (with gentle bob & continuous Y-axis spin)
+        const arrowBob = Math.sin(elapsed * 3.2) * 0.14;
+        const arrowTipY = Math.max(4.2, curY + 0.85) + arrowBob;
+        tourArrowGroup.position.set(curX, arrowTipY, curZ);
+        tourArrowGroup.rotation.y = elapsed * 1.6;
+        tourArrowTipMat.emissiveIntensity = 1.65 + Math.sin(elapsed * 6.0) * 0.5;
+
+        // Vertical beam connecting bottom red core to overhead arrow tip
+        const beamHeight = Math.max(0.05, arrowTipY - curY);
+        tourBeamMesh.position.set(curX, (curY + arrowTipY) * 0.5, curZ);
+        tourBeamMesh.scale.set(1, beamHeight, 1);
+        tourBeamMat.opacity = 0.48 + Math.sin(elapsed * 5.0) * 0.12;
+      }
+
       // Sync HD detail visibility & X-ray state
       towerHDGroup.visible = hdDetailEnabled;
       void xrayEnabled;
@@ -1689,6 +1859,11 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
       geometriesToDispose.forEach((g) => g.dispose());
       pMat.dispose();
       dfMat.dispose();
+      tourSphereMat.dispose();
+      tourCoreLedMat.dispose();
+      tourArrowShaftMat.dispose();
+      tourArrowTipMat.dispose();
+      tourBeamMat.dispose();
       (gatehouseHitProxy.material as THREE.Material).dispose();
       (guardHitProxy.material as THREE.Material).dispose();
       (dragonHitProxy.material as THREE.Material).dispose();

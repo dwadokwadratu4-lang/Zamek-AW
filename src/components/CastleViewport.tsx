@@ -24,6 +24,11 @@ interface CastleViewportProps {
   onGuardShot: () => void;
   onDragonWake: () => void;
   onHotspotsUpdate: (hotspots: ProjectedHotspot[]) => void;
+  tourSphereVisible: boolean;
+  tourSpherePos: { x: number; y: number; z: number };
+  tourSphereSize: number;
+  tourPointingActive: boolean;
+  onTourPoint: (pos: { x: number; y: number; z: number }) => void;
 }
 
 const _projVec = new THREE.Vector3();
@@ -32,6 +37,17 @@ const _targetQuat = new THREE.Quaternion();
 const _targetScale = new THREE.Vector3();
 const _poseSmoothPos = new THREE.Vector3();
 const _poseSmoothQuat = new THREE.Quaternion();
+const _tourHitLocal = new THREE.Vector3();
+
+function isObjectChainVisible(obj: THREE.Object3D, stopAt: THREE.Object3D): boolean {
+  let cur: THREE.Object3D | null = obj;
+  while (cur) {
+    if (!cur.visible) return false;
+    if (cur === stopAt) return true;
+    cur = cur.parent;
+  }
+  return true;
+}
 
 export const CastleViewport: React.FC<CastleViewportProps> = ({
   mode,
@@ -46,6 +62,11 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
   onGuardShot,
   onDragonWake,
   onHotspotsUpdate,
+  tourSphereVisible,
+  tourSpherePos,
+  tourSphereSize,
+  tourPointingActive,
+  onTourPoint,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -58,18 +79,24 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
   const reconRef = useRef(reconstructionPct);
   const markerRef = useRef(activeMarker);
   const arLockedRef = useRef(arLocked);
+  const tourPointingActiveRef = useRef(tourPointingActive);
+  const tourSphereVisibleRef = useRef(tourSphereVisible);
+  const tourSpherePosRef = useRef(tourSpherePos);
+  const tourSphereSizeRef = useRef(tourSphereSize);
 
   const onArStatusRef = useRef(onArStatusChange);
   const onPortcullisRef = useRef(onPortcullisToggle);
   const onGuardShotRef = useRef(onGuardShot);
   const onDragonWakeRef = useRef(onDragonWake);
   const onHotspotsRef = useRef(onHotspotsUpdate);
+  const onTourPointRef = useRef(onTourPoint);
 
   onArStatusRef.current = onArStatusChange;
   onPortcullisRef.current = onPortcullisToggle;
   onGuardShotRef.current = onGuardShot;
   onDragonWakeRef.current = onDragonWake;
   onHotspotsRef.current = onHotspotsUpdate;
+  onTourPointRef.current = onTourPoint;
 
   const castleCtrlRef = useRef<CastleController | null>(null);
   const arSessionRef = useRef<ArTrackerSession | null>(null);
@@ -113,6 +140,23 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     }
   }, [arLocked]);
 
+  useEffect(() => {
+    tourPointingActiveRef.current = tourPointingActive;
+  }, [tourPointingActive]);
+
+  useEffect(() => {
+    tourSphereVisibleRef.current = tourSphereVisible;
+    tourSpherePosRef.current = tourSpherePos;
+    tourSphereSizeRef.current = tourSphereSize;
+    castleCtrlRef.current?.setTourSphereState(
+      tourSphereVisible,
+      tourSpherePos.x,
+      tourSpherePos.y,
+      tourSpherePos.z,
+      tourSphereSize
+    );
+  }, [tourSphereVisible, tourSpherePos, tourSphereSize]);
+
   // Initialize Three.js Scene + Renderer once
   useEffect(() => {
     const container = mountRef.current;
@@ -143,6 +187,7 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
+    renderer.domElement.style.touchAction = 'none';
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -208,6 +253,13 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     castle.setXrayMode(xrayRef.current);
     castle.setTowerHDDetail(hdRef.current);
     castle.setReconstructionProgress(reconRef.current);
+    castle.setTourSphereState(
+      tourSphereVisibleRef.current,
+      tourSpherePosRef.current.x,
+      tourSpherePosRef.current.y,
+      tourSpherePosRef.current.z,
+      tourSphereSizeRef.current
+    );
 
     // Hierarchy: scene -> arAnchorRoot -> castleOrientGroup -> castle.root
     const arAnchorRoot = new THREE.Group();
@@ -221,19 +273,72 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
       renderer.compile(scene, deskCamera);
     }
 
-    // Raycasting & Touch Swipe for AR rotation + Portcullis tap
+    // Raycasting & Touch Swipe for AR rotation + Portcullis tap + TOUR sphere pointing
     const raycaster = new THREE.Raycaster();
     raycaster.layers.set(1);
+    const tourRaycaster = new THREE.Raycaster();
+    tourRaycaster.layers.set(0);
     const pointerNdc = new THREE.Vector2();
     let pointerDownPos: { x: number; y: number } | null = null;
     let lastSwipeX: number | null = null;
+    let isTourDragging = false;
+
+    const raycastCastlePoint = (clientX: number, clientY: number) => {
+      if (modeRef.current === 'ar' && !arAnchorRoot.visible) {
+        return null;
+      }
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      const activeCam = modeRef.current === 'ar' ? arCamera : deskCamera;
+      tourRaycaster.setFromCamera(pointerNdc, activeCam);
+
+      const hits = tourRaycaster.intersectObject(castle.root, true);
+      for (let i = 0; i < hits.length; i++) {
+        const obj = hits[i].object;
+        if (
+          (obj as THREE.Points).isPoints ||
+          obj.userData.ignoreTourRaycast ||
+          !isObjectChainVisible(obj, castle.root)
+        ) {
+          continue;
+        }
+        castle.root.worldToLocal(_tourHitLocal.copy(hits[i].point));
+        return {
+          x: Number(_tourHitLocal.x.toFixed(3)),
+          y: Number(_tourHitLocal.y.toFixed(3)),
+          z: Number(_tourHitLocal.z.toFixed(3)),
+        };
+      }
+      return null;
+    };
 
     const onPointerDown = (e: PointerEvent) => {
+      if (tourPointingActiveRef.current) {
+        isTourDragging = true;
+        pointerDownPos = null;
+        lastSwipeX = null;
+        const pt = raycastCastlePoint(e.clientX, e.clientY);
+        if (pt) {
+          onTourPointRef.current(pt);
+        }
+        return;
+      }
       pointerDownPos = { x: e.clientX, y: e.clientY };
       lastSwipeX = e.clientX;
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      if (tourPointingActiveRef.current) {
+        if (isTourDragging) {
+          const pt = raycastCastlePoint(e.clientX, e.clientY);
+          if (pt) {
+            onTourPointRef.current(pt);
+          }
+        }
+        return;
+      }
       if (modeRef.current === 'ar' && lastSwipeX !== null && e.buttons > 0) {
         const dx = e.clientX - lastSwipeX;
         arYawRef.current += dx * 0.011;
@@ -242,6 +347,10 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      if (isTourDragging) {
+        isTourDragging = false;
+        return;
+      }
       lastSwipeX = null;
       if (!pointerDownPos) return;
       const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
@@ -284,6 +393,15 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if (tourPointingActiveRef.current) {
+        if (isTourDragging && e.touches.length === 1) {
+          const pt = raycastCastlePoint(e.touches[0].clientX, e.touches[0].clientY);
+          if (pt) {
+            onTourPointRef.current(pt);
+          }
+        }
+        return;
+      }
       if (modeRef.current === 'ar' && e.touches.length === 1) {
         const tx = e.touches[0].clientX;
         if (lastSwipeX !== null) {
@@ -294,12 +412,14 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     };
 
     const onTouchEnd = () => {
+      isTourDragging = false;
       lastSwipeX = null;
     };
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onTouchEnd);
     renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: true });
     renderer.domElement.addEventListener('touchend', onTouchEnd);
 
@@ -427,8 +547,10 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
         scene.background = bg3DColor;
         scene.fog = fog3D;
         renderer.setClearColor(bg3DColor, 1);
-        controls.enabled = true;
-        controls.update();
+        controls.enabled = !tourPointingActiveRef.current;
+        if (controls.enabled) {
+          controls.update();
+        }
 
         arAnchorRoot.visible = true;
         arAnchorRoot.position.set(0, 0, 0);
@@ -492,6 +614,7 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onTouchEnd);
       renderer.domElement.removeEventListener('touchmove', onTouchMove);
       renderer.domElement.removeEventListener('touchend', onTouchEnd);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);

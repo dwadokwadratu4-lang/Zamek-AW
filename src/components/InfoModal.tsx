@@ -7,6 +7,7 @@ interface InfoModalProps {
   onClose: () => void;
   activeMarker: MarkerType;
   onChangeMarker: (marker: MarkerType) => void;
+  onStartTour: () => void;
 }
 
 export const InfoModal: React.FC<InfoModalProps> = ({
@@ -14,6 +15,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({
   onClose,
   activeMarker,
   onChangeMarker,
+  onStartTour,
 }) => {
   if (!isOpen) return null;
 
@@ -177,17 +179,26 @@ export const InfoModal: React.FC<InfoModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-white/10 px-5 py-3.5 bg-[#130E0C] flex items-center justify-between">
+        <div className="border-t border-white/10 px-5 py-3.5 bg-[#130E0C] flex items-center justify-between gap-3">
           <span className="text-xs text-[#8E8275]">
             Prototyp edukacyjno-muzealny · Racibórz
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[#D4AF37] text-[#1A080C] text-xs font-semibold hover:bg-[#E5C158] transition-colors cursor-pointer"
-          >
-            Powrót do makiety
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onStartTour}
+              className="px-4 py-2 rounded-lg bg-[#991B1B] border border-[#EF4444]/60 text-white text-xs font-bold tracking-wider hover:bg-[#B91C1C] transition-colors cursor-pointer"
+            >
+              TOUR
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-[#D4AF37] text-[#1A080C] text-xs font-semibold hover:bg-[#E5C158] transition-colors cursor-pointer"
+            >
+              Powrót do makiety
+            </button>
+          </div>
         </div>
       </div>
     </div>
