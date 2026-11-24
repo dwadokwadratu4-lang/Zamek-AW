@@ -303,16 +303,24 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
     renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: true });
     renderer.domElement.addEventListener('touchend', onTouchEnd);
 
-    // Resize handling
+    // Resize handling (window resize + ResizeObserver + frame check for mobile URL bar / orientation changes)
+    let lastRenderW = width;
+    let lastRenderH = height;
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth || window.innerWidth;
       const h = container.clientHeight || window.innerHeight;
+      if (w <= 0 || h <= 0) return;
+      lastRenderW = w;
+      lastRenderH = h;
       deskCamera.aspect = w / h;
       deskCamera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObs =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+    resizeObs?.observe(container);
 
     // WebGL Context Loss safety
     const onContextLost = (ev: Event) => {
@@ -360,6 +368,9 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
       const dt = Math.min(delta, 0.1);
       const w = container?.clientWidth || window.innerWidth;
       const h = container?.clientHeight || window.innerHeight;
+      if (w > 0 && h > 0 && (w !== lastRenderW || h !== lastRenderH)) {
+        handleResize();
+      }
 
       const isAr = modeRef.current === 'ar';
 
@@ -477,6 +488,7 @@ export const CastleViewport: React.FC<CastleViewportProps> = ({
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       window.removeEventListener('resize', handleResize);
+      resizeObs?.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);

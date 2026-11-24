@@ -248,17 +248,26 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
   foliageInst.computeBoundingSphere();
   baseGroup.add(foliageInst);
 
-  // Museum Field Plaque: "Zamek Piastowski • Racibórz"
+  // Museum Field Plaque: "ZAMEK • RACIBÓRZ" (Single solid opaque BoxGeometry — zero Z-fighting)
   const plaqueGroup = new THREE.Group();
-  plaqueGroup.position.set(0, -0.42, 5.72);
+  plaqueGroup.position.set(0, -0.35, 5.72);
   plaqueGroup.rotation.x = -0.36;
-  const plaqueBack = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.45, 0.92, 0.14)), mats.plaqueFrame);
-  plaqueGroup.add(plaqueBack);
-  const plaqueFront = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(3.32, 0.82)), mats.plaqueFace);
-  plaqueFront.position.z = 0.075;
-  plaqueGroup.add(plaqueFront);
-  const standL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.65, 0.18)), mats.plinthStone);
-  standL.position.set(-1.1, -0.55, -0.05);
+  const plaqueBoard = new THREE.Mesh(
+    trackGeo(new THREE.BoxGeometry(3.45, 0.92, 0.14)),
+    [
+      mats.plaqueFrame,
+      mats.plaqueFrame,
+      mats.plaqueFrame,
+      mats.plaqueFrame,
+      mats.plaqueFace,
+      mats.plaqueFrame,
+    ]
+  );
+  plaqueBoard.castShadow = true;
+  plaqueBoard.receiveShadow = true;
+  plaqueGroup.add(plaqueBoard);
+  const standL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.78, 0.18)), mats.plinthStone);
+  standL.position.set(-1.1, -0.60, -0.05);
   plaqueGroup.add(standL);
   const standR = standL.clone();
   standR.position.x = 1.1;
@@ -773,25 +782,25 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
     trackGeo(new THREE.PlaneGeometry(1.52, 2.02)),
     mats.gateTowerHD
   );
-  hdFrontPanel.position.set(0, 3.65, 0.748);
+  hdFrontPanel.position.set(0, 3.65, 0.768);
   hdFrontPanel.castShadow = true;
   hdFrontPanel.receiveShadow = true;
   towerHDGroup.add(hdFrontPanel);
 
   // 3D Profiled Stone Window Sill & Jambs around the HD Lancet Window
   const hdSill = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.46, 0.06, 0.09)), mats.stone);
-  hdSill.position.set(0, 3.68, 0.76);
+  hdSill.position.set(0, 3.68, 0.785);
   towerHDGroup.add(hdSill);
 
   [-0.2, 0.2].forEach((jx) => {
     const jamb = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.055, 0.6, 0.07)), mats.stone);
-    jamb.position.set(jx, 3.98, 0.755);
+    jamb.position.set(jx, 3.98, 0.78);
     towerHDGroup.add(jamb);
   });
 
   // 3D Sculpted Stone Heraldic Shield (Golden Upper Silesian Eagle on Blue Field)
   const shieldGroup = new THREE.Group();
-  shieldGroup.position.set(0, 3.12, 0.755);
+  shieldGroup.position.set(0, 3.12, 0.778);
   towerHDGroup.add(shieldGroup);
 
   const shieldShape = new THREE.Shape();
@@ -818,7 +827,7 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
     trackGeo(new THREE.PlaneGeometry(0.38, 0.44)),
     mats.heraldicShieldFace
   );
-  shieldCrestPlane.position.set(0, 0.01, 0.084);
+  shieldCrestPlane.position.set(0, 0.01, 0.094);
   shieldGroup.add(shieldCrestPlane);
 
   // Raised 3D golden eagle crest accent on shield
@@ -827,7 +836,7 @@ export function buildRaciborzCastle(mats: CastleMaterialLibrary, isSoftwareGl: b
     mats.guardGold
   );
   eagleRelief.scale.set(1.35, 1.5, 0.35);
-  eagleRelief.position.set(0, 0.02, 0.095);
+  eagleRelief.position.set(0, 0.02, 0.106);
   shieldGroup.add(eagleRelief);
 
   tagLayer(gatehouseGroup, 'xv');

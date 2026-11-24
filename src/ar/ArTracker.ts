@@ -63,11 +63,17 @@ export class ArTrackerSession {
   private detectedMatrix = new THREE.Matrix4();
   private hasEverDetected = false;
   private disposed = false;
+  private procCanvas: HTMLCanvasElement;
+  private procCtx: CanvasRenderingContext2D;
 
   public cameraMatrix = new THREE.Matrix4();
 
   constructor(videoEl: HTMLVideoElement) {
     this.video = videoEl;
+    this.procCanvas = document.createElement('canvas');
+    this.procCanvas.width = 640;
+    this.procCanvas.height = 480;
+    this.procCtx = this.procCanvas.getContext('2d')!;
   }
 
   public setActiveMarker(marker: MarkerType) {
@@ -111,12 +117,9 @@ export class ArTrackerSession {
     const vw = this.video.videoWidth || 640;
     const vh = this.video.videoHeight || 480;
 
-    // Process at crisp mobile-friendly resolution keeping exact camera aspect ratio
-    const procW = Math.min(vw, 640);
-    const procH = Math.round((procW / vw) * vh);
-
+    // Initialize ARController at exact camera_para.dat 640x480 dimensions (square pixels, zero arParamChangeSize skew)
     const ARController = getARController();
-    const ctrl = await ARController.initWithDimensions(procW, procH, '/camera_para.dat');
+    const ctrl = await ARController.initWithDimensions(640, 480, '/camera_para.dat');
     if (this.disposed) {
       ctrl.dispose();
       throw new Error('Sesja AR została zamknięta.');
@@ -157,7 +160,20 @@ export class ArTrackerSession {
 
   public processFrame(): { detected: boolean; matrix: THREE.Matrix4 } {
     if (this.controller && this.video.readyState >= 2) {
-      this.controller.process(this.video);
+      const vw = this.video.videoWidth || 640;
+      const vh = this.video.videoHeight || 480;
+      const scale = Math.min(640 / vw, 480 / vh);
+      const drawW = vw * scale;
+      const drawH = vh * scale;
+      const offsetX = (640 - drawW) * 0.5;
+      const offsetY = (480 - drawH) * 0.5;
+
+      if (offsetX > 0.5 || offsetY > 0.5) {
+        this.procCtx.fillStyle = '#000';
+        this.procCtx.fillRect(0, 0, 640, 480);
+      }
+      this.procCtx.drawImage(this.video, offsetX, offsetY, drawW, drawH);
+      this.controller.process(this.procCanvas as unknown as HTMLVideoElement);
     }
     const now = performance.now();
     // 260ms grace window avoids micro-flicker if a single frame blurs
@@ -175,11 +191,29 @@ export class ArTrackerSession {
     const videoAspect = vw / vh;
     const screenAspect = viewportWidth / Math.max(1, viewportHeight);
 
+    // Match the uniform scale used to draw the video into the 640x480 AR processing canvas
+    const procScale = Math.min(640 / vw, 480 / vh);
+    const drawW = vw * procScale;
+    const drawH = vh * procScale;
+
+    const baseFxNdc = this.cameraMatrix.elements[0] * (640 / drawW);
+    const baseFyNdc = this.cameraMatrix.elements[5] * (480 / drawH);
+
+    // Match <video className="object-cover" /> framing while enforcing 1:1 square pixels (P[5]/P[0] === screenAspect)
     if (screenAspect < videoAspect) {
-      proj.elements[0] *= videoAspect / screenAspect;
-    } else if (screenAspect > videoAspect) {
-      proj.elements[5] *= screenAspect / videoAspect;
+      proj.elements[5] = baseFyNdc;
+      proj.elements[0] = baseFyNdc / screenAspect;
+    } else {
+      proj.elements[0] = baseFxNdc;
+      proj.elements[5] = baseFxNdc * screenAspect;
     }
+
+    // Tighten near/far planes to maximize mobile WebGL depth-buffer precision
+    const near = 0.25;
+    const far = 80;
+    proj.elements[10] = -(far + near) / (far - near);
+    proj.elements[14] = -(2 * far * near) / (far - near);
+
     return proj;
   }
 

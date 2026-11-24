@@ -242,8 +242,12 @@ export function createCastleMaterials(maxAnisotropy: number, isSoftwareGl: boole
 
   const plaqueFace = new THREE.MeshStandardMaterial({
     map: plaqueTex,
+    transparent: false,
     roughness: 0.42,
     metalness: 0.45,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
 
   const plaqueFrame = new THREE.MeshStandardMaterial({
@@ -274,6 +278,10 @@ export function createCastleMaterials(maxAnisotropy: number, isSoftwareGl: boole
     roughnessMap: hdTowerMaps.roughnessMap,
     roughness: 1.0,
     metalness: 0.06,
+    transparent: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 
   const heraldicShieldFace = new THREE.MeshPhysicalMaterial({
@@ -282,6 +290,10 @@ export function createCastleMaterials(maxAnisotropy: number, isSoftwareGl: boole
     metalness: 0.25,
     clearcoat: 0.65,
     clearcoatRoughness: 0.22,
+    transparent: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 
   // Castle Guard Materials
