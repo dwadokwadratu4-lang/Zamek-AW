@@ -1,0 +1,6 @@
+{
+  "name": "Racibórz: Miasto, którego już nie ma (WebAR 4D)",
+  "description": "Cyfrowa rekonstrukcja 4D Zamku Piastowskiego w Raciborzu w trybie 3D i WebAR. Koncepcja i realizacja: Artur Wierzbicki.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
